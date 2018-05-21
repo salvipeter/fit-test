@@ -34,7 +34,6 @@ MyViewer::MyViewer(QWidget *parent) :
 {
   setSelectRegionWidth(10);
   setSelectRegionHeight(10);
-  axes.shown = false;
 }
 
 MyViewer::~MyViewer() {
@@ -244,22 +243,6 @@ Vec MyViewer::meanMapColor(double d) const {
   return green * (1 - alpha) + red * alpha;
 }
 
-void MyViewer::fairMesh() {
-  if (model_type != ModelType::MESH)
-    return;
-
-  emit startComputation(tr("Fairing mesh..."));
-  OpenMesh::Smoother::JacobiLaplaceSmootherT<MyMesh> smoother(mesh);
-  smoother.initialize(OpenMesh::Smoother::SmootherT<MyMesh>::Normal, // or: Tangential_and_Normal
-                      OpenMesh::Smoother::SmootherT<MyMesh>::C1);
-  for (size_t i = 1; i <= 10; ++i) {
-    smoother.smooth(10);
-    emit midComputation(i * 10);
-  }
-  updateMesh(false);
-  emit endComputation();
-}
-
 void MyViewer::updateVertexNormals() {
   // Weights according to:
   //   N. Max, Weights for computing vertex normals from facet normals.
@@ -300,10 +283,6 @@ void MyViewer::setupCamera() {
   }
   camera()->setSceneBoundingBox(Vec(box_min.data()), Vec(box_max.data()));
   camera()->showEntireScene();
-
-  setSelectedName(-1);
-  axes.shown = false;
-
   update();
 }
 
@@ -398,9 +377,6 @@ void MyViewer::draw() {
     }
     glEnable(GL_LIGHTING);
   }
-
-  if (axes.shown)
-    drawAxes();
 }
 
 void MyViewer::drawControlNet() const {
@@ -427,88 +403,6 @@ void MyViewer::drawControlNet() const {
   glEnd();
   glPointSize(1.0);
   glEnable(GL_LIGHTING);
-}
-
-void MyViewer::drawAxes() const {
-  const Vec &p = axes.position;
-  glColor3d(1.0, 0.0, 0.0);
-  drawArrow(p, p + Vec(axes.size, 0.0, 0.0), axes.size / 50.0);
-  glColor3d(0.0, 1.0, 0.0);
-  drawArrow(p, p + Vec(0.0, axes.size, 0.0), axes.size / 50.0);
-  glColor3d(0.0, 0.0, 1.0);
-  drawArrow(p, p + Vec(0.0, 0.0, axes.size), axes.size / 50.0);
-  glEnd();
-}
-
-void MyViewer::drawWithNames() {
-  if (axes.shown)
-    return drawAxesWithNames();
-
-  switch (model_type) {
-  case ModelType::NONE: break;
-  case ModelType::MESH:
-    if (!show_wireframe)
-      return;
-    for (auto v : mesh.vertices()) {
-      glPushName(v.idx());
-      glRasterPos3dv(mesh.point(v).data());
-      glPopName();
-    }
-    break;
-  case ModelType::BEZIER_SURFACE:
-    if (!show_control_points)
-      return;
-    for (size_t i = 0, ie = control_points.size(); i < ie; ++i) {
-      Vec const &p = control_points[i];
-      glPushName(i);
-      glRasterPos3fv(p);
-      glPopName();
-    }
-    break;
-  }
-}
-
-void MyViewer::drawAxesWithNames() const {
-  const Vec &p = axes.position;
-  glPushName(0);
-  drawArrow(p, p + Vec(axes.size, 0.0, 0.0), axes.size / 50.0);
-  glPopName();
-  glPushName(1);
-  drawArrow(p, p + Vec(0.0, axes.size, 0.0), axes.size / 50.0);
-  glPopName();
-  glPushName(2);
-  drawArrow(p, p + Vec(0.0, 0.0, axes.size), axes.size / 50.0);
-  glPopName();
-}
-
-void MyViewer::postSelection(const QPoint &p) {
-  int sel = selectedName();
-  if (sel == -1) {
-    axes.shown = false;
-    return;
-  }
-
-  if (axes.shown) {
-    axes.selected_axis = sel;
-    bool found;
-    axes.grabbed_pos = camera()->pointUnderPixel(p, found);
-    axes.original_pos = axes.position;
-    if (!found)
-      axes.shown = false;
-    return;
-  }
-
-  selected_vertex = sel;
-  if (model_type == ModelType::MESH)
-    axes.position = Vec(mesh.point(MyMesh::VertexHandle(sel)).data());
-  if (model_type == ModelType::BEZIER_SURFACE)
-    axes.position = control_points[sel];
-  double depth = camera()->projectedCoordinatesOf(axes.position)[2];
-  Vec q1 = camera()->unprojectedCoordinatesOf(Vec(0.0, 0.0, depth));
-  Vec q2 = camera()->unprojectedCoordinatesOf(Vec(width(), height(), depth));
-  axes.size = (q1 - q2).norm() / 10.0;
-  axes.shown = true;
-  axes.selected_axis = -1;
 }
 
 void MyViewer::keyPressEvent(QKeyEvent *e) {
@@ -538,25 +432,11 @@ void MyViewer::keyPressEvent(QKeyEvent *e) {
       show_wireframe = !show_wireframe;
       update();
       break;
-    case Qt::Key_F:
-      fairMesh();
-      update();
-      break;
     default:
       QGLViewer::keyPressEvent(e);
     }
   else
     QGLViewer::keyPressEvent(e);
-}
-
-Vec MyViewer::intersectLines(const Vec &ap, const Vec &ad, const Vec &bp, const Vec &bd) {
-  // always returns a point on the (ap, ad) line
-  double a = ad * ad, b = ad * bd, c = bd * bd;
-  double d = ad * (ap - bp), e = bd * (ap - bp);
-  if (a * c - b * b < 1.0e-7)
-    return ap;
-  double s = (b * e - c * d) / (a * c - b * b);
-  return ap + s * ad;
 }
 
 void MyViewer::bernsteinAll(size_t n, double u, std::vector<double> &coeff) {
@@ -608,57 +488,4 @@ void MyViewer::generateMesh() {
       tri.push_back(handles[(i + 1) * resolution + j + 1]);
       mesh.add_face(tri);
     }
-}
-
-void MyViewer::mouseMoveEvent(QMouseEvent *e) {
-  if (!axes.shown || axes.selected_axis < 0 ||
-      !(e->modifiers() & Qt::ShiftModifier) ||
-      !(e->buttons() & Qt::LeftButton))
-    return QGLViewer::mouseMoveEvent(e);
-
-  Vec from, dir, axis(axes.selected_axis == 0, axes.selected_axis == 1, axes.selected_axis == 2);
-  camera()->convertClickToLine(e->pos(), from, dir);
-  auto p = intersectLines(axes.grabbed_pos, axis, from, dir);
-  float d = (p - axes.grabbed_pos) * axis;
-  axes.position[axes.selected_axis] = axes.original_pos[axes.selected_axis] + d;
-  if (model_type == ModelType::MESH)
-    mesh.set_point(MyMesh::VertexHandle(selected_vertex),
-                   Vector(static_cast<double *>(axes.position)));
-  if (model_type == ModelType::BEZIER_SURFACE)
-    control_points[selected_vertex] = axes.position;
-  updateMesh();
-  update();
-}
-
-QString MyViewer::helpString() const {
-  QString text("<h2>Sample Framework</h2>"
-               "<p>This is a minimal framework for 3D mesh manipulation, which can be "
-               "extended and used as a base for various projects, for example "
-               "prototypes for fairing algorithms, or even displaying/modifying "
-               "parametric surfaces, etc.</p>"
-               "<p>The following hotkeys are available:</p>"
-               "<ul>"
-               "<li>&nbsp;P: Set plain map (no coloring)</li>"
-               "<li>&nbsp;M: Set mean curvature map</li>"
-               "<li>&nbsp;I: Set isophote line map</li>"
-               "<li>&nbsp;C: Toggle control polygon visualization</li>"
-               "<li>&nbsp;S: Toggle solid (filled polygon) visualization</li>"
-               "<li>&nbsp;W: Toggle wireframe visualization</li>"
-               "<li>&nbsp;F: Fair mesh</li>"
-               "</ul>"
-               "<p>There is also a simple selection and movement interface, enabled "
-               "only when the wireframe/controlnet is displayed: a mesh vertex can be selected "
-               "by shift-clicking, and it can be moved by shift-dragging one of the "
-               "displayed axes.</p>"
-               "<p>Note that libQGLViewer is furnished with a lot of useful features, "
-               "such as storing/loading view positions, or saving screenshots. "
-               "OpenMesh also has a nice collection of tools for mesh manipulation: "
-               "decimation, subdivision, smoothing, etc. These can provide "
-               "good comparisons to the methods you implement.</p>"
-               "<p>This software can be used as a sample GUI base for handling "
-               "parametric or procedural surfaces, as well. The power of "
-               "Qt and libQGLViewer makes it easy to set up a prototype application. "
-               "Feel free to modify and explore!</p>"
-               "<p align=\"right\">Peter Salvi</p>");
-  return text;
 }

@@ -32,11 +32,7 @@ signals:
 protected:
   virtual void init() override;
   virtual void draw() override;
-  virtual void drawWithNames() override;
-  virtual void postSelection(const QPoint &p) override;
   virtual void keyPressEvent(QKeyEvent *e) override;
-  virtual void mouseMoveEvent(QMouseEvent *e) override;
-  virtual QString helpString() const override;
 
 private:
   struct MyTraits : public OpenMesh::DefaultTraits {
@@ -65,12 +61,6 @@ private:
   void setupCamera();
   Vec meanMapColor(double d) const;
   void drawControlNet() const;
-  void drawAxes() const;
-  void drawAxesWithNames() const;
-  static Vec intersectLines(const Vec &ap, const Vec &ad, const Vec &bp, const Vec &bd);
-
-  // Other
-  void fairMesh();
 
   //////////////////////
   // Member variables //
@@ -90,13 +80,6 @@ private:
   bool show_control_points, show_solid, show_wireframe;
   enum class Visualization { PLAIN, MEAN, ISOPHOTES } visualization;
   GLuint isophote_texture;
-  int selected_vertex;
-  struct ModificationAxes {
-    bool shown;
-    float size;
-    int selected_axis;
-    Vec position, grabbed_pos, original_pos;
-  } axes;
 };
 
 #include "MyViewer.hpp"

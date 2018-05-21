@@ -5,6 +5,8 @@ syntax: glob
 *.o
 *.stl
 *.ply
+*.xml
 moc_*
 qrc_*
 Makefile
+fit-test
