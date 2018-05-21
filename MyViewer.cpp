@@ -7,19 +7,9 @@
 
 #include <QtGui/QKeyEvent>
 
-#include <OpenMesh/Core/IO/MeshIO.hh>
-#include <OpenMesh/Tools/Smoother/JacobiLaplaceSmootherT.hh>
-
-// #define BETTER_MEAN_CURVATURE
-
-#ifdef BETTER_MEAN_CURVATURE
-#include "Eigen/Eigenvalues"
-#include "Eigen/Geometry"
-#include "Eigen/LU"
-#include "Eigen/SVD"
-#endif
-
 #include "MyViewer.h"
+#include "mesh-model.hh"
+#include "bspline-model.hh"
 
 #ifdef _WIN32
 #define GL_CLAMP_TO_EDGE 0x812F
@@ -27,291 +17,48 @@
 #endif
 
 MyViewer::MyViewer(QWidget *parent) :
-  QGLViewer(parent), model_type(ModelType::NONE),
-  mean_min(0.0), mean_max(0.0), cutoff_ratio(0.05),
-  show_control_points(true), show_solid(true), show_wireframe(false),
-  visualization(Visualization::PLAIN)
+  QGLViewer(parent)
 {
-  setSelectRegionWidth(10);
-  setSelectRegionHeight(10);
 }
 
 MyViewer::~MyViewer() {
   glDeleteTextures(1, &isophote_texture);
 }
 
-void MyViewer::updateMeanMinMax() {
-  size_t n = mesh.n_vertices();
-  if (n == 0)
-    return;
-
-  std::vector<double> mean;
-  mean.reserve(n);
-  for (auto v : mesh.vertices())
-    mean.push_back(mesh.data(v).mean);
-
-  std::sort(mean.begin(), mean.end());
-  size_t k = (double)n * cutoff_ratio;
-  mean_min = std::min(mean[k ? k-1 : 0], 0.0);
-  mean_max = std::max(mean[n-k], 0.0);
+bool
+MyViewer::openMesh(std::string filename) {
+  points = std::make_unique<MeshModel>();
+  if (!points->open(filename)) {
+    points.reset();
+    return false;
+  }
+  setupCamera();
+  return true;
 }
 
-void MyViewer::localSystem(const MyViewer::Vector &normal,
-                           MyViewer::Vector &u, MyViewer::Vector &v) {
-  // Generates an orthogonal (u,v) coordinate system in the plane defined by `normal`.
-  int maxi = 0, nexti = 1;
-  double max = std::abs(normal[0]), next = std::abs(normal[1]);
-  if (max < next) {
-    std::swap(max, next);
-    std::swap(maxi, nexti);
+bool
+MyViewer::openBSpline(std::string filename) {
+  nominal = std::make_unique<BSplineModel>();
+  if (!nominal->open(filename)) {
+    nominal.reset();
+    return false;
   }
-  if (std::abs(normal[2]) > max) {
-    nexti = maxi;
-    maxi = 2;
-  } else if (std::abs(normal[2]) > next)
-    nexti = 2;
-
-  u.vectorize(0.0);
-  u[nexti] = -normal[maxi];
-  u[maxi] = normal[nexti];
-  u /= u.norm();
-  v = normal % u;
-}
-
-double MyViewer::voronoiWeight(MyViewer::MyMesh::HalfedgeHandle in_he) {
-  // Returns the area of the triangle bounded by in_he that is closest
-  // to the vertex pointed to by in_he.
-  auto next = mesh.next_halfedge_handle(in_he);
-  auto prev = mesh.prev_halfedge_handle(in_he);
-  double c2 = mesh.calc_edge_vector(in_he).sqrnorm();
-  double b2 = mesh.calc_edge_vector(next).sqrnorm();
-  double a2 = mesh.calc_edge_vector(prev).sqrnorm();
-  double alpha = mesh.calc_sector_angle(in_he);
-
-  if (a2 + b2 < c2)                // obtuse gamma
-    return 0.125 * b2 * std::tan(alpha);
-  if (a2 + c2 < b2)                // obtuse beta
-    return 0.125 * c2 * std::tan(alpha);
-  if (b2 + c2 < a2) {              // obtuse alpha
-    double b = std::sqrt(b2), c = std::sqrt(c2);
-    double total_area = 0.5 * b * c * std::sin(alpha);
-    double beta  = mesh.calc_sector_angle(prev);
-    double gamma = mesh.calc_sector_angle(next);
-    return total_area - 0.125 * (b2 * std::tan(gamma) + c2 * std::tan(beta));
-  }
-
-  double r2 = 0.25 * a2 / std::pow(std::sin(alpha), 2); // squared circumradius
-  auto area = [r2](double x2) {
-    return 0.125 * std::sqrt(x2) * std::sqrt(std::max(4.0 * r2 - x2, 0.0));
-  };
-  return area(b2) + area(c2);
-}
-
-#ifndef BETTER_MEAN_CURVATURE
-void MyViewer::updateMeanCurvature(bool update_min_max) {
-  std::map<MyMesh::FaceHandle, double> face_area;
-  std::map<MyMesh::VertexHandle, double> vertex_area;
-
-  for (auto f : mesh.faces())
-    face_area[f] = mesh.calc_sector_area(mesh.halfedge_handle(f));
-
-  // Compute triangle strip areas
-  for (auto v : mesh.vertices()) {
-    vertex_area[v] = 0;
-    mesh.data(v).mean = 0;
-    for (auto f : mesh.vf_range(v))
-      vertex_area[v] += face_area[f];
-    vertex_area[v] /= 3.0;
-  }
-
-  // Compute mean values using dihedral angles
-  for (auto v : mesh.vertices()) {
-    for (auto h : mesh.vih_range(v)) {
-      auto vec = mesh.calc_edge_vector(h);
-      double angle = mesh.calc_dihedral_angle(h); // signed; returns 0 at the boundary
-      mesh.data(v).mean += angle * vec.norm();
-    }
-    mesh.data(v).mean *= 0.25 / vertex_area[v];
-  }
-
-  if (update_min_max)
-    updateMeanMinMax();
-}
-#else // BETTER_MEAN_CURVATURE
-void MyViewer::updateMeanCurvature(bool update_min_max) {
-  // As in the paper:
-  //   S. Rusinkiewicz, Estimating curvatures and their derivatives on triangle meshes.
-  //     3D Data Processing, Visualization and Transmission, IEEE, 2004.
-
-  std::map<MyMesh::VertexHandle, Vector> efgp; // 2nd principal form
-  std::map<MyMesh::VertexHandle, double> wp;   // accumulated weight
-
-  // Initial setup
-  for (auto v : mesh.vertices()) {
-    efgp[v].vectorize(0.0);
-    wp[v] = 0.0;
-  }
-
-  for (auto f : mesh.faces()) {
-    // Setup local edges, vertices and normals
-    auto h0 = mesh.halfedge_handle(f);
-    auto h1 = mesh.next_halfedge_handle(h0);
-    auto h2 = mesh.next_halfedge_handle(h1);
-    auto e0 = mesh.calc_edge_vector(h0);
-    auto e1 = mesh.calc_edge_vector(h1);
-    auto e2 = mesh.calc_edge_vector(h2);
-    auto n0 = mesh.normal(mesh.to_vertex_handle(h1));
-    auto n1 = mesh.normal(mesh.to_vertex_handle(h2));
-    auto n2 = mesh.normal(mesh.to_vertex_handle(h0));
-
-    Vector n = mesh.normal(f), u, v;
-    localSystem(n, u, v);
-
-    // Solve a LSQ equation for (e,f,g) of the face
-    Eigen::MatrixXd A(6, 3);
-    A << (e0 | u), (e0 | v),    0.0,
-            0.0,   (e0 | u), (e0 | v),
-         (e1 | u), (e1 | v),    0.0,
-            0.0,   (e1 | u), (e1 | v),
-         (e2 | u), (e2 | v),    0.0,
-            0.0,   (e2 | u), (e2 | v);
-    Eigen::VectorXd b(6);
-    b << ((n2 - n1) | u),
-         ((n2 - n1) | v),
-         ((n0 - n2) | u),
-         ((n0 - n2) | v),
-         ((n1 - n0) | u),
-         ((n1 - n0) | v);
-    Eigen::Vector3d x = A.fullPivLu().solve(b);
-
-    Eigen::Matrix2d F;          // Fundamental matrix for the face
-    F << x(0), x(1),
-         x(1), x(2);
-
-    for (auto h : mesh.fh_range(f)) {
-      auto p = mesh.to_vertex_handle(h);
-
-      // Rotate the (up,vp) local coordinate system to be coplanar with that of the face
-      Vector np = mesh.normal(p), up, vp;
-      localSystem(np, up, vp);
-      auto axis = (np % n).normalize();
-      double angle = std::acos(std::min(std::max(n | np, -1.0), 1.0));
-      auto rotation = Eigen::AngleAxisd(angle, Eigen::Vector3d(axis.data()));
-      Eigen::Vector3d up1(up.data()), vp1(vp.data());
-      up1 = rotation * up1;    vp1 = rotation * vp1;
-      up = Vector(up1.data()); vp = Vector(vp1.data());
-
-      // Compute the vertex-local (e,f,g)
-      double e, f, g;
-      Eigen::Vector2d upf, vpf;
-      upf << (up | u), (up | v);
-      vpf << (vp | u), (vp | v);
-      e = upf.transpose() * F * upf;
-      f = upf.transpose() * F * vpf;
-      g = vpf.transpose() * F * vpf;
-
-      // Accumulate the results with Voronoi weights
-      double w = voronoiWeight(h);
-      efgp[p] += Vector(e, f, g) * w;
-      wp[p] += w;
-    }
-  }
-
-  // Compute the principal curvatures
-  for (auto v : mesh.vertices()) {
-    auto &efg = efgp[v];
-    efg /= wp[v];
-    Eigen::Matrix2d F;
-    F << efg[0], efg[1],
-         efg[1], efg[2];
-    auto k = F.eigenvalues();   // always real, because F is a symmetric real matrix
-    mesh.data(v).mean = (k(0).real() + k(1).real()) / 2.0;
-  }
-
-  if (update_min_max)
-    updateMeanMinMax();
-}
-#endif
-
-Vec MyViewer::meanMapColor(double d) const {
-  static const Vec red(1,0,0), green(0,1,0), blue(0,0,1);
-  if (d < 0) {
-    double alpha = mean_min ? std::min(d / mean_min, 1.0) : 1.0;
-    return green * (1 - alpha) + blue * alpha;
-  }
-  double alpha = mean_max ? std::min(d / mean_max, 1.0) : 1.0;
-  return green * (1 - alpha) + red * alpha;
-}
-
-void MyViewer::updateVertexNormals() {
-  // Weights according to:
-  //   N. Max, Weights for computing vertex normals from facet normals.
-  //     Journal of Graphics Tools, Vol. 4(2), 1999.
-  for (auto v : mesh.vertices()) {
-    Vector n(0.0, 0.0, 0.0);
-    for (auto h : mesh.vih_range(v)) {
-      if (mesh.is_boundary(h))
-        continue;
-      auto in_vec  = mesh.calc_edge_vector(h);
-      auto out_vec = mesh.calc_edge_vector(mesh.next_halfedge_handle(h));
-      double w = in_vec.sqrnorm() * out_vec.sqrnorm();
-      n += (in_vec % out_vec) / (w == 0.0 ? 1.0 : w);
-    }
-    double len = n.length();
-    if (len != 0.0)
-      n /= len;
-    mesh.set_normal(v, n);
-  }
-}
-
-void MyViewer::updateMesh(bool update_mean_range) {
-  if (model_type == ModelType::BEZIER_SURFACE)
-    generateMesh();
-  mesh.request_face_normals(); mesh.request_vertex_normals();
-  mesh.update_face_normals(); //mesh.update_vertex_normals();
-  updateVertexNormals();
-  updateMeanCurvature(update_mean_range);
+  nominal->setIsophoteTexture(isophote_texture);
+  setupCamera();
+  return true;
 }
 
 void MyViewer::setupCamera() {
-  // Set camera on the model
-  Vector box_min, box_max;
-  box_min = box_max = mesh.point(*mesh.vertices_begin());
-  for (auto v : mesh.vertices()) {
-    box_min.minimize(mesh.point(v));
-    box_max.maximize(mesh.point(v));
-  }
-  camera()->setSceneBoundingBox(Vec(box_min.data()), Vec(box_max.data()));
+  Vec min, max;
+  if (nominal)
+    nominal->boundingBox(min, max);
+  else if (points)
+    points->boundingBox(min, max);
+  else
+    return;
+  camera()->setSceneBoundingBox(min, max);
   camera()->showEntireScene();
   update();
-}
-
-bool MyViewer::openMesh(const std::string &filename) {
-  if (!OpenMesh::IO::read_mesh(mesh, filename) || mesh.n_vertices() == 0)
-    return false;
-  model_type = ModelType::MESH;
-  updateMesh();
-  setupCamera();
-  return true;
-}
-
-bool MyViewer::openBezier(const std::string &filename) {
-  size_t n, m;
-  try {
-    std::ifstream f(filename.c_str());
-    f >> n >> m;
-    degree[0] = n++; degree[1] = m++;
-    control_points.resize(n * m);
-    for (size_t i = 0, index = 0; i < n; ++i)
-      for (size_t j = 0; j < m; ++j, ++index)
-        f >> control_points[index][0] >> control_points[index][1] >> control_points[index][2];
-  } catch(std::ifstream::failure) {
-    return false;
-  }
-  model_type = ModelType::BEZIER_SURFACE;
-  updateMesh();
-  setupCamera();
-  return true;
 }
 
 void MyViewer::init() {
@@ -328,108 +75,54 @@ void MyViewer::init() {
 }
 
 void MyViewer::draw() {
-  if (model_type == ModelType::BEZIER_SURFACE && show_control_points)
-    drawControlNet();
-
-  glPolygonMode(GL_FRONT_AND_BACK, !show_solid && show_wireframe ? GL_LINE : GL_FILL);
-  glEnable(GL_POLYGON_OFFSET_FILL);
-  glPolygonOffset(1, 1);
-
-  if (show_solid || show_wireframe) {
-    if (visualization == Visualization::PLAIN)
-      glColor3d(1.0, 1.0, 1.0);
-    else if (visualization == Visualization::ISOPHOTES) {
-      glBindTexture(GL_TEXTURE_2D, isophote_texture);
-      glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
-      glEnable(GL_TEXTURE_2D);
-      glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
-      glTexGeni(GL_T, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
-      glEnable(GL_TEXTURE_GEN_S);
-      glEnable(GL_TEXTURE_GEN_T);
-    }
-    for (auto f : mesh.faces()) {
-      glBegin(GL_POLYGON);
-      for (auto v : mesh.fv_range(f)) {
-        if (visualization == Visualization::MEAN)
-          glColor3dv(meanMapColor(mesh.data(v).mean));
-        glNormal3dv(mesh.normal(v).data());
-        glVertex3dv(mesh.point(v).data());
-      }
-      glEnd();
-    }
-    if (visualization == Visualization::ISOPHOTES) {
-      glDisable(GL_TEXTURE_GEN_S);
-      glDisable(GL_TEXTURE_GEN_T);
-      glDisable(GL_TEXTURE_2D);
-      glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE);
-    }
-  }
-
-  if (show_solid && show_wireframe) {
-    glPolygonMode(GL_FRONT, GL_LINE);
-    glColor3d(0.0, 0.0, 0.0);
-    glDisable(GL_LIGHTING);
-    for (auto f : mesh.faces()) {
-      glBegin(GL_POLYGON);
-      for (auto v : mesh.fv_range(f))
-        glVertex3dv(mesh.point(v).data());
-      glEnd();
-    }
-    glEnable(GL_LIGHTING);
-  }
-}
-
-void MyViewer::drawControlNet() const {
-  glDisable(GL_LIGHTING);
-  glLineWidth(3.0);
-  glColor3d(0.3, 0.3, 1.0);
-  size_t m = degree[1] + 1;
-  for (size_t k = 0; k < 2; ++k)
-    for (size_t i = 0; i <= degree[k]; ++i) {
-      glBegin(GL_LINE_STRIP);
-      for (size_t j = 0; j <= degree[1-k]; ++j) {
-        size_t const index = k ? j * m + i : i * m + j;
-        const auto &p = control_points[index];
-        glVertex3dv(p);
-      }
-      glEnd();
-    }
-  glLineWidth(1.0);
-  glPointSize(8.0);
-  glColor3d(1.0, 0.0, 1.0);
-  glBegin(GL_POINTS);
-  for (const auto &p : control_points)
-    glVertex3dv(p);
-  glEnd();
-  glPointSize(1.0);
-  glEnable(GL_LIGHTING);
+  if (points)
+    points->draw();
+  if (nominal)
+    nominal->draw();
+  if (fitted)
+    fitted->draw();
 }
 
 void MyViewer::keyPressEvent(QKeyEvent *e) {
+  Model *current = nullptr;
   if (e->modifiers() == Qt::NoModifier)
+    current = nominal.get();
+  else if (e->modifiers() == Qt::ShiftModifier)
+    current = fitted.get();
+  else if (e->modifiers() == Qt::AltModifier)
+    current = points.get();
+  if (current)
     switch (e->key()) {
     case Qt::Key_P:
-      visualization = Visualization::PLAIN;
+      current->setVisualization(Model::Visualization::PLAIN);
       update();
       break;
     case Qt::Key_M:
-      visualization = Visualization::MEAN;
+      current->setVisualization(Model::Visualization::MEAN);
       update();
       break;
     case Qt::Key_I:
-      visualization = Visualization::ISOPHOTES;
+      current->setVisualization(Model::Visualization::ISOPHOTES);
       update();
+      break;
+    case Qt::Key_D:
+      current->setVisualization(Model::Visualization::DEVIATION);
       break;
     case Qt::Key_C:
-      show_control_points = !show_control_points;
-      update();
+      {
+        BSplineModel *bsp = dynamic_cast<BSplineModel *>(current);
+        if (bsp) {
+          bsp->toggleControlNet();
+          update();
+        }
+      }
       break;
     case Qt::Key_S:
-      show_solid = !show_solid;
+      current->toggleSolid();
       update();
       break;
     case Qt::Key_W:
-      show_wireframe = !show_wireframe;
+      current->toggleWireframe();
       update();
       break;
     default:
@@ -437,55 +130,4 @@ void MyViewer::keyPressEvent(QKeyEvent *e) {
     }
   else
     QGLViewer::keyPressEvent(e);
-}
-
-void MyViewer::bernsteinAll(size_t n, double u, std::vector<double> &coeff) {
-  coeff.clear(); coeff.reserve(n + 1);
-  coeff.push_back(1.0);
-  double u1 = 1.0 - u;
-  for (size_t j = 1; j <= n; ++j) {
-    double saved = 0.0;
-    for (size_t k = 0; k < j; ++k) {
-      double tmp = coeff[k];
-      coeff[k] = saved + tmp * u1;
-      saved = tmp * u;
-    }
-    coeff.push_back(saved);
-  }
-}
-
-void MyViewer::generateMesh() {
-  size_t resolution = 30;
-
-  mesh.clear();
-  std::vector<MyMesh::VertexHandle> handles, tri;
-  size_t n = degree[0], m = degree[1];
-
-  std::vector<double> coeff_u, coeff_v;
-  for (size_t i = 0; i < resolution; ++i) {
-    double u = (double)i / (double)(resolution - 1);
-    bernsteinAll(n, u, coeff_u);
-    for (size_t j = 0; j < resolution; ++j) {
-      double v = (double)j / (double)(resolution - 1);
-      bernsteinAll(m, v, coeff_v);
-      Vec p(0.0, 0.0, 0.0);
-      for (size_t k = 0, index = 0; k <= n; ++k)
-        for (size_t l = 0; l <= m; ++l, ++index)
-          p += control_points[index] * coeff_u[k] * coeff_v[l];
-      handles.push_back(mesh.add_vertex(Vector(static_cast<double *>(p))));
-    }
-  }
-  for (size_t i = 0; i < resolution - 1; ++i)
-    for (size_t j = 0; j < resolution - 1; ++j) {
-      tri.clear();
-      tri.push_back(handles[i * resolution + j]);
-      tri.push_back(handles[i * resolution + j + 1]);
-      tri.push_back(handles[(i + 1) * resolution + j]);
-      mesh.add_face(tri);
-      tri.clear();
-      tri.push_back(handles[(i + 1) * resolution + j]);
-      tri.push_back(handles[i * resolution + j + 1]);
-      tri.push_back(handles[(i + 1) * resolution + j + 1]);
-      mesh.add_face(tri);
-    }
 }

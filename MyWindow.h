@@ -17,8 +17,6 @@ public:
 
 private slots:
   void open();
-  void setCutoff();
-  void setRange();
   void startComputation(QString message);
   void midComputation(int percent);
   void endComputation();
