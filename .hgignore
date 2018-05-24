@@ -5,8 +5,12 @@ syntax: glob
 *.o
 *.stl
 *.ply
+*.obj
+*.bsp
+*.pts
 *.xml
 moc_*
 qrc_*
+*.so*
 Makefile
 fit-test

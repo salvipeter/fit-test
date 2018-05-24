@@ -1,5 +1,7 @@
 #include "bspline-model.hh"
 
+#include <Geom_BSplineSurface.hxx>
+
 BSplineModel::BSplineModel() :
   show_control_net(true), mean_map_range(0.0)
 {
@@ -13,24 +15,43 @@ BSplineModel::generateMesh() {
   size_t resolution = 30;
 
   mesh.clear();
-  std::vector<MyMesh::VertexHandle> handles, tri;
-  size_t n = degree[0], m = degree[1];
+  mesh.request_vertex_normals();
 
-  std::vector<double> coeff_u, coeff_v;
-  for (size_t i = 0; i < resolution; ++i) {
-    double u = (double)i / (double)(resolution - 1);
-    bernsteinAll(n, u, coeff_u);
-    for (size_t j = 0; j < resolution; ++j) {
-      double v = (double)j / (double)(resolution - 1);
-      bernsteinAll(m, v, coeff_v);
-      Vec p(0.0, 0.0, 0.0);
-      for (size_t k = 0, index = 0; k <= n; ++k)
-        for (size_t l = 0; l <= m; ++l, ++index)
-          p += control_points[index] * coeff_u[k] * coeff_v[l];
-      handles.push_back(mesh.add_vertex(Vector(static_cast<double *>(p))));
-      // TODO: setup mean curvature & normal
+  std::vector<MyMesh::VertexHandle> handles, tri;
+
+  double ulo, uhi, vlo, vhi;
+  surface->Bounds(ulo, uhi, vlo, vhi);
+  for (size_t i = 0; i <= resolution; ++i) {
+    double u = (double)i / resolution;
+    u = ulo + (uhi - ulo) * u;
+    for (size_t j = 0; j <= resolution; ++j) {
+      double v = (double)j / resolution;
+      v = vlo + (vhi - vlo) * v;
+      gp_Pnt p;
+      gp_Vec d1u, d1v, d2u, d2v, d2uv;
+      surface->D2(u, v, p, d1u, d1v, d2u, d2v, d2uv);
+
+      // Add point
+      auto q = MyMesh::Normal(p.XYZ().GetData());
+      auto new_vertex = mesh.add_vertex(q);
+      handles.push_back(new_vertex);
+
+      // Compute normal
+      auto n = (d1u ^ d1v).Normalized();
+      q = MyMesh::Normal(n.XYZ().GetData());
+      mesh.set_normal(new_vertex, q);
+
+      // Compute mean curvature
+      double E = d1u.SquareMagnitude();
+      double F = d1u * d1v;
+      double G = d1v.SquareMagnitude();
+      double L = n * d2u;
+      double M = n * d2uv;
+      double N = n * d2v;
+      mesh.data(new_vertex).mean = (N*E-2*M*F+L*G)/(2*(E*G-F*F));
     }
   }
+
   for (size_t i = 0; i < resolution - 1; ++i)
     for (size_t j = 0; j < resolution - 1; ++j) {
       tri.clear();
@@ -48,37 +69,94 @@ BSplineModel::generateMesh() {
 
 bool
 BSplineModel::open(std::string filename) {
-  size_t n, m;
+  size_t deg_u, deg_v, nknots_u, nknots_v;
+  std::vector<double> knots_u, knots_v;
+  std::vector<int> mult_u, mult_v;
   try {
+
     std::ifstream f(filename.c_str());
-    f >> n >> m;
-    degree[0] = n++; degree[1] = m++;
-    control_points.resize(n * m);
-    for (size_t i = 0, index = 0; i < n; ++i)
-      for (size_t j = 0; j < m; ++j, ++index)
-        f >> control_points[index][0] >> control_points[index][1] >> control_points[index][2];
+
+    f >> deg_u >> deg_v;
+
+    // U knot vector
+    f >> nknots_u;
+    for (size_t i = 0; i < nknots_u; ++i) {
+      double u;
+      f >> u;
+      if (i > 0 && knots_u.back() == u)
+        mult_u.back()++;
+      else {
+        knots_u.push_back(u);
+        mult_u.push_back(1);
+      }
+    }
+    TColStd_Array1OfReal knots_u_occ(knots_u[0], 1, knots_u.size());
+    TColStd_Array1OfInteger mult_u_occ(mult_u[0], 1, mult_u.size());
+
+    // V knot vector
+    f >> nknots_v;
+    for (size_t i = 0; i < nknots_v; ++i) {
+      double v;
+      f >> v;
+      if (i > 0 && knots_v.back() == v)
+        mult_v.back()++;
+      else {
+        knots_v.push_back(v);
+        mult_v.push_back(1);
+      }
+    }
+    TColStd_Array1OfReal knots_v_occ(knots_v[0], 1, knots_v.size());
+    TColStd_Array1OfInteger mult_v_occ(mult_v[0], 1, mult_v.size());
+
+    // Control net
+    size_t nrow = nknots_u - deg_u - 1, ncol = nknots_v - deg_v - 1;
+    TColgp_Array2OfPnt cnet(1, nrow, 1, ncol);
+
+    for (size_t i = 1; i <= nrow; ++i)
+      for (size_t j = 1; j <= ncol; ++j) {
+        double x, y, z;
+        f >> x >> y >> z;
+        cnet(i, j) = gp_Pnt(x, y, z);
+      }
+
+    surface = std::make_unique<Geom_BSplineSurface>(cnet, knots_u_occ, knots_v_occ,
+                                                    mult_u_occ, mult_v_occ, deg_u, deg_v);
+
   } catch(std::ifstream::failure) {
     return false;
   }
+
   generateMesh();
-  // TODO: setup bounding box
+
+  // TODO: would be faster to compute this by the control net
+  auto min = mesh.point(*mesh.vertices_begin()), max = min;
+  for (auto v : mesh.vertices()) {
+    min.minimize(mesh.point(v));
+    max.maximize(mesh.point(v));
+  }
+  box_min = Vec(min.data());
+  box_max = Vec(max.data());
+
   return true;
 }
 
 void
 BSplineModel::draw() const {
-  if (show_control_points) {
+  if (show_control_net) {
+    const auto &cpts = surface->Poles();
+
     glDisable(GL_LIGHTING);
     glLineWidth(3.0);
     glColor3d(0.3, 0.3, 1.0);
-    size_t m = degree[1] + 1;
-    for (size_t k = 0; k < 2; ++k)
-      for (size_t i = 0; i <= degree[k]; ++i) {
+    int nrowcol[2];
+    nrowcol[0] = cpts.UpperRow() - cpts.LowerRow() + 1;
+    nrowcol[1] = cpts.UpperCol() - cpts.LowerCol() + 1;
+    for (int k = 0; k < 2; ++k)
+      for (int i = 1; i <= nrowcol[k]; ++i) {
         glBegin(GL_LINE_STRIP);
-        for (size_t j = 0; j <= degree[1-k]; ++j) {
-          size_t const index = k ? j * m + i : i * m + j;
-          const auto &p = control_points[index];
-          glVertex3dv(p);
+        for (int j = 1; j <= nrowcol[1-k]; ++j) {
+          const auto &p = cpts(i, j);
+          glVertex3dv(p.XYZ().GetData());
         }
         glEnd();
       }
@@ -86,8 +164,11 @@ BSplineModel::draw() const {
     glPointSize(8.0);
     glColor3d(1.0, 0.0, 1.0);
     glBegin(GL_POINTS);
-    for (const auto &p : control_points)
-      glVertex3dv(p);
+    for (int i = cpts.LowerRow(); i <= cpts.UpperRow(); ++i)
+      for (int j = cpts.LowerCol(); j <= cpts.UpperCol(); ++j) {
+        const auto &p = cpts(i, j);
+        glVertex3dv(p.XYZ().GetData());
+      }
     glEnd();
     glPointSize(1.0);
     glEnable(GL_LIGHTING);
@@ -101,7 +182,7 @@ BSplineModel::draw() const {
     if (visualization == Visualization::PLAIN)
       glColor3d(1.0, 1.0, 1.0);
     else if (visualization == Visualization::ISOPHOTES) {
-      glBindTexture(GL_TEXTURE_2D, isophote_texture);
+      glBindTexture(GL_TEXTURE_2D, *isophote_texture);
       glTexEnvf(GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_DECAL);
       glEnable(GL_TEXTURE_2D);
       glTexGeni(GL_S, GL_TEXTURE_GEN_MODE, GL_SPHERE_MAP);
@@ -142,7 +223,7 @@ BSplineModel::draw() const {
 }
 
 void
-BSplineModel::toggleShowControlNet() {
+BSplineModel::toggleControlNet() {
   show_control_net = !show_control_net;
 }
 
