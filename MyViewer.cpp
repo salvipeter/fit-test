@@ -107,6 +107,7 @@ void MyViewer::keyPressEvent(QKeyEvent *e) {
       break;
     case Qt::Key_D:
       current->setVisualization(Model::Visualization::DEVIATION);
+      update();
       break;
     case Qt::Key_C:
       {

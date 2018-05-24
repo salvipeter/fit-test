@@ -21,8 +21,8 @@ MeshModel::open(std::string filename) {
   box_min = Vec(min.data());
   box_max = Vec(max.data());
 
-  mesh.request_vertex_normals();
-  mesh.update_vertex_normals();
+  mesh.request_face_normals(); mesh.request_vertex_normals();
+  mesh.update_face_normals();  mesh.update_vertex_normals();
 
   return true;
 }
@@ -36,6 +36,7 @@ MeshModel::draw() const {
   if (visualization == Visualization::DEVIATION)
     glDisable(GL_LIGHTING);
 
+  glColor3d(1.0, 1.0, 1.0);
   if (show_solid || show_wireframe) {
     for (auto f : mesh.faces()) {
       glBegin(GL_POLYGON);

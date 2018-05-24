@@ -52,17 +52,18 @@ BSplineModel::generateMesh() {
     }
   }
 
-  for (size_t i = 0; i < resolution - 1; ++i)
-    for (size_t j = 0; j < resolution - 1; ++j) {
+  size_t len = resolution + 1;
+  for (size_t i = 0; i < resolution; ++i)
+    for (size_t j = 0; j < resolution; ++j) {
       tri.clear();
-      tri.push_back(handles[i * resolution + j]);
-      tri.push_back(handles[i * resolution + j + 1]);
-      tri.push_back(handles[(i + 1) * resolution + j]);
+      tri.push_back(handles[i * len + j]);
+      tri.push_back(handles[i * len + j + 1]);
+      tri.push_back(handles[(i + 1) * len + j]);
       mesh.add_face(tri);
       tri.clear();
-      tri.push_back(handles[(i + 1) * resolution + j]);
-      tri.push_back(handles[i * resolution + j + 1]);
-      tri.push_back(handles[(i + 1) * resolution + j + 1]);
+      tri.push_back(handles[(i + 1) * len + j]);
+      tri.push_back(handles[i * len + j + 1]);
+      tri.push_back(handles[(i + 1) * len + j + 1]);
       mesh.add_face(tri);
     }
 }
@@ -152,11 +153,16 @@ BSplineModel::draw() const {
     nrowcol[0] = cpts.UpperRow() - cpts.LowerRow() + 1;
     nrowcol[1] = cpts.UpperCol() - cpts.LowerCol() + 1;
     for (int k = 0; k < 2; ++k)
-      for (int i = 1; i <= nrowcol[k]; ++i) {
+      for (int i = 0; i < nrowcol[k]; ++i) {
         glBegin(GL_LINE_STRIP);
-        for (int j = 1; j <= nrowcol[1-k]; ++j) {
-          const auto &p = cpts(i, j);
-          glVertex3dv(p.XYZ().GetData());
+        for (int j = 0; j < nrowcol[1-k]; ++j) {
+          if (k == 0) {
+            const auto &p = cpts(cpts.LowerRow() + i, cpts.LowerCol() + j);
+            glVertex3dv(p.XYZ().GetData());
+          } else {
+            const auto &p = cpts(cpts.LowerRow() + j, cpts.LowerCol() + i);
+            glVertex3dv(p.XYZ().GetData());
+          }
         }
         glEnd();
       }
