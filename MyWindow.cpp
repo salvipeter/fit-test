@@ -1,12 +1,16 @@
+#include "MyWindow.h"
+
 #include <memory>
 
 #include <QtWidgets>
 
-#include "MyWindow.h"
+#include "MyViewer.h"
+#include "options-window.hh"
 
 MyWindow::MyWindow(QApplication *parent) :
   QMainWindow(), parent(parent), last_directory(".")
 {
+  setMinimumSize(1024, 768);
   setWindowTitle(tr("Fit Testing Framework"));
   setStatusBar(new QStatusBar);
   progress = new QProgressBar;
@@ -19,6 +23,9 @@ MyWindow::MyWindow(QApplication *parent) :
   connect(viewer, SIGNAL(midComputation(int)), this, SLOT(midComputation(int)));
   connect(viewer, SIGNAL(endComputation()), this, SLOT(endComputation()));
   setCentralWidget(viewer);
+
+  options_window = new OptionsWindow(this);
+  addDockWidget(Qt::LeftDockWidgetArea, options_window);
 
   /////////////////////////
   // Setup actions/menus //
@@ -61,6 +68,16 @@ void MyWindow::open() {
   if (!ok)
     QMessageBox::warning(this, tr("Cannot open file"),
                          tr("Could not open file: ") + filename + ".");
+}
+
+void
+MyWindow::updateRanges() {
+  viewer->setRanges(options_window->meanRange(), options_window->deviationRange());
+}
+
+void
+MyWindow::fit() {
+  viewer->fit();
 }
 
 void MyWindow::startComputation(QString message) {

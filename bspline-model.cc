@@ -32,7 +32,7 @@ BSplineModel::generateMesh() {
       surface->D2(u, v, p, d1u, d1v, d2u, d2v, d2uv);
 
       // Add point
-      auto q = MyMesh::Normal(p.XYZ().GetData());
+      auto q = MyMesh::Point(p.XYZ().GetData());
       auto new_vertex = mesh.add_vertex(q);
       handles.push_back(new_vertex);
 
@@ -56,14 +56,14 @@ BSplineModel::generateMesh() {
   for (size_t i = 0; i < resolution; ++i)
     for (size_t j = 0; j < resolution; ++j) {
       tri.clear();
-      tri.push_back(handles[i * len + j]);
-      tri.push_back(handles[i * len + j + 1]);
       tri.push_back(handles[(i + 1) * len + j]);
+      tri.push_back(handles[i * len + j + 1]);
+      tri.push_back(handles[i * len + j]);
       mesh.add_face(tri);
       tri.clear();
-      tri.push_back(handles[(i + 1) * len + j]);
-      tri.push_back(handles[i * len + j + 1]);
       tri.push_back(handles[(i + 1) * len + j + 1]);
+      tri.push_back(handles[i * len + j + 1]);
+      tri.push_back(handles[(i + 1) * len + j]);
       mesh.add_face(tri);
     }
 }
@@ -166,6 +166,7 @@ BSplineModel::draw() const {
         }
         glEnd();
       }
+
     glLineWidth(1.0);
     glPointSize(8.0);
     glColor3d(1.0, 0.0, 1.0);

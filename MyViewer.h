@@ -18,6 +18,8 @@ public:
 
   bool openMesh(std::string filename);
   bool openBSpline(std::string filename);
+  void setRanges(double mean_range, double deviation_range);
+  void fit();
 
 signals:
   void startComputation(QString message);

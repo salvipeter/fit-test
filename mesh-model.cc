@@ -21,8 +21,10 @@ MeshModel::open(std::string filename) {
   box_min = Vec(min.data());
   box_max = Vec(max.data());
 
-  mesh.request_face_normals(); mesh.request_vertex_normals();
-  mesh.update_face_normals();  mesh.update_vertex_normals();
+  mesh.request_vertex_normals();
+  mesh.request_face_normals();
+  mesh.update_normals();        // needs face normals
+  mesh.release_face_normals();
 
   return true;
 }

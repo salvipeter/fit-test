@@ -48,6 +48,23 @@ MyViewer::openBSpline(std::string filename) {
   return true;
 }
 
+void
+MyViewer::setRanges(double mean_range, double deviation_range) {
+  if (points)
+    points->setDeviationRange(deviation_range);
+  if (nominal)
+    nominal->setMeanMapRange(mean_range);
+  if (fitted)
+    fitted->setMeanMapRange(mean_range);
+  update();
+}
+
+void
+MyViewer::fit() {
+  // TODO
+  update();
+}
+
 void MyViewer::setupCamera() {
   Vec min, max;
   if (nominal)
