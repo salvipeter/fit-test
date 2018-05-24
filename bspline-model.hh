@@ -16,6 +16,7 @@ public:
   virtual void draw() const override;
   void toggleControlNet();
   void setMeanMapRange(double range);
+  double distance(const Vec &p) const;
 
 private:
   struct MyTraits : public OpenMesh::DefaultTraits {

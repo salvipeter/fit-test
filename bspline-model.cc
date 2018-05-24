@@ -1,6 +1,7 @@
 #include "bspline-model.hh"
 
 #include <Geom_BSplineSurface.hxx>
+#include <GeomAPI_ProjectPointOnSurf.hxx>
 
 BSplineModel::BSplineModel() :
   show_control_net(true), mean_map_range(0.0)
@@ -238,3 +239,12 @@ void
 BSplineModel::setMeanMapRange(double range) {
   mean_map_range = range;
 }
+
+double
+BSplineModel::distance(const Vec &p) const {
+  // return GeomAPI_ProjectPointOnSurf(gp_Pnt(p[0], p[1], p[2]), surface.get());
+  gp_Pnt q(p[0], p[1], p[2]);
+  GeomAPI_ProjectPointOnSurf projection(q, surface.get());
+  return projection.LowerDistance();
+}
+

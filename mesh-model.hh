@@ -11,9 +11,8 @@ public:
   virtual ~MeshModel();
   virtual bool open(std::string filename) override;
   virtual void draw() const override;
-  void setDeviationFn(double (*fn)(const Vec &p));
   void setDeviationRange(double range);
-  void updateDeviation();
+  void updateDeviation(const std::function<double(const Vec &p)> &fn);
 
 private:
   struct MyTraits : public OpenMesh::DefaultTraits {
@@ -24,6 +23,6 @@ private:
   using MyMesh = OpenMesh::TriMesh_ArrayKernelT<MyTraits>;
 
   MyMesh mesh;
-  double (*deviation)(const Vec &p);
+  std::function<double(const Vec &p)> deviation;
   double deviation_range;
 };

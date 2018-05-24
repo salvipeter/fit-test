@@ -71,17 +71,12 @@ MeshModel::draw() const {
 }
 
 void
-MeshModel::setDeviationFn(double (*fn)(const Vec &p)) {
-  deviation = fn;
-}
-
-void
 MeshModel::setDeviationRange(double range) {
   deviation_range = range;
 }
 
 void
-MeshModel::updateDeviation() {
+MeshModel::updateDeviation(const std::function<double(const Vec &p)> &fn) {
   for (auto v : mesh.vertices())
-    mesh.data(v).deviation = deviation(Vec(mesh.point(v).data()));
+    mesh.data(v).deviation = fn(Vec(mesh.point(v).data()));
 }
