@@ -2,11 +2,9 @@
 
 #include "model.hh"
 
-#include <memory>
-
 #include <OpenMesh/Core/Mesh/TriMesh_ArrayKernelT.hh>
 
-class Geom_BSplineSurface;
+#include <Geom_BSplineSurface.hxx>
 
 class BSplineModel : public Model {
 public:
@@ -31,7 +29,7 @@ private:
   };
   using MyMesh = OpenMesh::TriMesh_ArrayKernelT<MyTraits>;
 
-  std::unique_ptr<Geom_BSplineSurface> surface;
+  opencascade::handle<Geom_BSplineSurface> surface;
   MyMesh mesh;
   bool show_control_net;
   size_t resolution;

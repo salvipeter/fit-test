@@ -32,8 +32,12 @@ MyViewer::openMesh(std::string filename) {
     points.reset();
     return false;
   }
-  if (nominal)
+  if (nominal) {
+    emit startComputation("Computing deviation...");
+    emit midComputation(50);
     points->updateDeviation([&](const Vec &p) { return nominal->distance(p); });
+    emit endComputation();
+  }
   setupCamera();
   return true;
 }
@@ -45,8 +49,12 @@ MyViewer::openBSpline(std::string filename) {
     nominal.reset();
     return false;
   }
-  if (points)
+  if (points) {
+    emit startComputation("Computing deviation...");
+    emit midComputation(50);
     points->updateDeviation([&](const Vec &p) { return nominal->distance(p); });
+    emit endComputation();
+  }
   nominal->setIsophoteTexture(isophote_texture);
   setupCamera();
   return true;

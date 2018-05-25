@@ -10,7 +10,7 @@
 MyWindow::MyWindow(QApplication *parent) :
   QMainWindow(), parent(parent), last_directory(".")
 {
-  setMinimumSize(1024, 768);
+  setMinimumSize(1000, 700);
   setWindowTitle(tr("Fit Testing Framework"));
   setStatusBar(new QStatusBar);
   progress = new QProgressBar;

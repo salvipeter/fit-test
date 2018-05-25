@@ -1,6 +1,5 @@
 #include "bspline-model.hh"
 
-#include <Geom_BSplineSurface.hxx>
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 
 BSplineModel::BSplineModel() :
@@ -119,8 +118,8 @@ BSplineModel::open(std::string filename) {
         cnet(i, j) = gp_Pnt(x, y, z);
       }
 
-    surface = std::make_unique<Geom_BSplineSurface>(cnet, knots_u_occ, knots_v_occ,
-                                                    mult_u_occ, mult_v_occ, deg_u, deg_v);
+    surface = new Geom_BSplineSurface(cnet, knots_u_occ, knots_v_occ,
+                                      mult_u_occ, mult_v_occ, deg_u, deg_v);
 
   } catch(std::ifstream::failure) {
     return false;
@@ -250,9 +249,19 @@ BSplineModel::setMeanMapRange(double range) {
 
 double
 BSplineModel::distance(const Vec &p) const {
-  // return GeomAPI_ProjectPointOnSurf(gp_Pnt(p[0], p[1], p[2]), surface.get());
   gp_Pnt q(p[0], p[1], p[2]);
-  GeomAPI_ProjectPointOnSurf projection(q, surface.get());
-  return projection.LowerDistance();
+  GeomAPI_ProjectPointOnSurf projection(q, surface);
+  double d = projection.LowerDistance(), u, v;
+  projection.LowerDistanceParameters(u, v);
+
+  // Compute the sign
+  gp_Pnt closest;
+  gp_Vec d1u, d1v;
+  surface->D1(u, v, closest, d1u, d1v);
+  auto n = (d1u ^ d1v).Normalized();
+  
+  if (gp_Vec(closest, q) * n >= 0.0)
+    return d;
+  return -d;
 }
 

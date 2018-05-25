@@ -13,6 +13,6 @@ OPENCASCADE = ../opencascade-7.2.0/build
 INCLUDEPATH += $$OPENCASCADE/include/opencascade
 
 LIBS += -lQGLViewer -L/usr/lib/OpenMesh -lOpenMeshCored -lGL -lGLU \
-        -L$$OPENCASCADE/lin32/gcc/libd -lTKernel -lTKG3d -lTKGeomBase -lTKGeomAlgo -lTKMath
+        -L$$OPENCASCADE/lin64/gcc/libd -lTKernel -lTKG3d -lTKGeomBase -lTKGeomAlgo -lTKMath
 
 RESOURCES = fit-test.qrc
