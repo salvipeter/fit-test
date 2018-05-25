@@ -15,8 +15,11 @@ public:
   virtual bool open(std::string filename) override;
   virtual void draw() const override;
   void toggleControlNet();
+  size_t getResolution() const;
+  void setResolution(size_t res);
   void setMeanMapRange(double range);
   double distance(const Vec &p) const;
+  void generateMesh();
 
 private:
   struct MyTraits : public OpenMesh::DefaultTraits {
@@ -28,10 +31,9 @@ private:
   };
   using MyMesh = OpenMesh::TriMesh_ArrayKernelT<MyTraits>;
 
-  void generateMesh();
-
   std::unique_ptr<Geom_BSplineSurface> surface;
   MyMesh mesh;
   bool show_control_net;
+  size_t resolution;
   double mean_map_range;
 };

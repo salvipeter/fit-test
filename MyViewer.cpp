@@ -53,13 +53,24 @@ MyViewer::openBSpline(std::string filename) {
 }
 
 void
-MyViewer::setRanges(double mean_range, double deviation_range) {
-  if (points)
+MyViewer::setRanges(size_t resolution, double mean_range, double deviation_range) {
+  if (points) {
     points->setDeviationRange(deviation_range);
-  if (nominal)
+  }
+  if (nominal) {
+    if (nominal->getResolution() != resolution) {
+      nominal->setResolution(resolution);
+      nominal->generateMesh();
+    }
     nominal->setMeanMapRange(mean_range);
-  if (fitted)
+  }
+  if (fitted) {
+    if (fitted->getResolution() != resolution) {
+      fitted->setResolution(resolution);
+      fitted->generateMesh();
+    }
     fitted->setMeanMapRange(mean_range);
+  }
   update();
 }
 

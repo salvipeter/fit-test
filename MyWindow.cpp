@@ -72,7 +72,8 @@ void MyWindow::open() {
 
 void
 MyWindow::updateRanges() {
-  viewer->setRanges(options_window->meanRange(), options_window->deviationRange());
+  viewer->setRanges(options_window->resolution(),
+                    options_window->meanRange(), options_window->deviationRange());
 }
 
 void

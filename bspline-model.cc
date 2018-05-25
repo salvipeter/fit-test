@@ -4,7 +4,7 @@
 #include <GeomAPI_ProjectPointOnSurf.hxx>
 
 BSplineModel::BSplineModel() :
-  show_control_net(true), mean_map_range(0.0)
+  show_control_net(true), resolution(30), mean_map_range(0.0)
 {
 }
 
@@ -13,8 +13,6 @@ BSplineModel::~BSplineModel() {
 
 void
 BSplineModel::generateMesh() {
-  size_t resolution = 30;
-
   mesh.clear();
   mesh.request_vertex_normals();
 
@@ -233,6 +231,16 @@ BSplineModel::draw() const {
 void
 BSplineModel::toggleControlNet() {
   show_control_net = !show_control_net;
+}
+
+size_t
+BSplineModel::getResolution() const {
+  return resolution;
+}
+
+void
+BSplineModel::setResolution(size_t res) {
+  resolution = res;
 }
 
 void

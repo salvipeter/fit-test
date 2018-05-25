@@ -8,6 +8,11 @@ OptionsWindow::OptionsWindow(MyWindow *parent) : parent(parent) {
   setFeatures(QDockWidget::DockWidgetMovable | QDockWidget::DockWidgetFloatable); // not closable
   setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
 
+  sb_res = new QSpinBox;
+  sb_res->setRange(5, 100);
+  sb_res->setValue(30);         // default value in BSplineModel
+  connect(sb_res, SIGNAL(valueChanged(int)), parent, SLOT(updateRanges()));
+
   sb_mean = new QDoubleSpinBox;
   sb_mean->setDecimals(5);
   sb_mean->setRange(0.0, 1000.0);
@@ -24,6 +29,7 @@ OptionsWindow::OptionsWindow(MyWindow *parent) : parent(parent) {
 
   auto *gb_vis = new QGroupBox("Visualization options");
   auto *form_vis = new QFormLayout;
+  form_vis->addRow(tr("Surface resolution"), sb_res);
   form_vis->addRow(tr("Mean map range"), sb_mean);
   form_vis->addRow(tr("Deviation range"), sb_deviation);
   gb_vis->setLayout(form_vis);
@@ -52,6 +58,11 @@ OptionsWindow::OptionsWindow(MyWindow *parent) : parent(parent) {
   sa->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   sa->setWidget(w);
   setWidget(sa);
+}
+
+size_t
+OptionsWindow::resolution() const {
+  return sb_res->value();
 }
 
 double
