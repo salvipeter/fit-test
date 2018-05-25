@@ -70,6 +70,17 @@ MeshModel::draw() const {
   }
 }
 
+TColgp_Array1OfPnt
+MeshModel::getPoints() const {
+  TColgp_Array1OfPnt points(1, mesh.n_vertices());
+  int index = 1;
+  for (const auto &v : mesh.vertices()) {
+    const auto &p = mesh.point(v);
+    points(index++) = gp_Pnt(p[0], p[1], p[2]);
+  }
+  return points;
+}
+
 void
 MeshModel::setDeviationRange(double range) {
   deviation_range = range;

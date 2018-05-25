@@ -10,6 +10,7 @@
 #include "MyViewer.h"
 #include "mesh-model.hh"
 #include "bspline-model.hh"
+#include "fitter.hh"
 
 #ifdef _WIN32
 #define GL_CLAMP_TO_EDGE 0x812F
@@ -84,8 +85,11 @@ MyViewer::setRanges(size_t resolution, double mean_range, double deviation_range
 
 void
 MyViewer::fit(double tolerance) {
+  if (!nominal || !points)
+    return;
   fitted = std::make_unique<BSplineModel>();
-  // fitted->fit(*nominal, *points);
+  auto surf_handle = ReFitter::fit(nominal->getSurface(), points->getPoints(), tolerance);
+  fitted->setSurface(surf_handle);
   update();
 }
 

@@ -12,6 +12,8 @@ public:
   virtual ~BSplineModel();
   virtual bool open(std::string filename) override;
   virtual void draw() const override;
+  const opencascade::handle<Geom_BSplineSurface> &getSurface() const;
+  void setSurface(const opencascade::handle<Geom_BSplineSurface> &s);
   void toggleControlNet();
   size_t getResolution() const;
   void setResolution(size_t res);

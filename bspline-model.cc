@@ -64,6 +64,15 @@ BSplineModel::generateMesh() {
       tri.push_back(handles[(i + 1) * len + j]);
       mesh.add_face(tri);
     }
+
+  // Compute bounding box
+  auto min = mesh.point(*mesh.vertices_begin()), max = min;
+  for (auto v : mesh.vertices()) {
+    min.minimize(mesh.point(v));
+    max.maximize(mesh.point(v));
+  }
+  box_min = Vec(min.data());
+  box_max = Vec(max.data());
 }
 
 bool
@@ -126,15 +135,6 @@ BSplineModel::open(std::string filename) {
   }
 
   generateMesh();
-
-  // TODO: would be faster to compute this by the control net
-  auto min = mesh.point(*mesh.vertices_begin()), max = min;
-  for (auto v : mesh.vertices()) {
-    min.minimize(mesh.point(v));
-    max.maximize(mesh.point(v));
-  }
-  box_min = Vec(min.data());
-  box_max = Vec(max.data());
 
   return true;
 }
@@ -225,6 +225,17 @@ BSplineModel::draw() const {
     }
     glEnable(GL_LIGHTING);
   }
+}
+
+const opencascade::handle<Geom_BSplineSurface> &
+BSplineModel::getSurface() const {
+  return surface;
+}
+
+void
+BSplineModel::setSurface(const opencascade::handle<Geom_BSplineSurface> &s) {
+  surface = s;
+  generateMesh();
 }
 
 void
