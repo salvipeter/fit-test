@@ -14,9 +14,10 @@ public:
   size_t resolution() const;
   double meanRange() const;
   double deviationRange() const;
+  double tolerance() const;
 
 private:
   MyWindow *parent;
   QSpinBox *sb_res;
-  QDoubleSpinBox *sb_mean, *sb_deviation;
+  QDoubleSpinBox *sb_mean, *sb_deviation, *sb_tolerance;
 };

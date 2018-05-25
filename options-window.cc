@@ -34,7 +34,7 @@ OptionsWindow::OptionsWindow(MyWindow *parent) : parent(parent) {
   form_vis->addRow(tr("Deviation range"), sb_deviation);
   gb_vis->setLayout(form_vis);
 
-  auto *sb_tolerance = new QDoubleSpinBox;
+  sb_tolerance = new QDoubleSpinBox;
   sb_tolerance->setDecimals(5);
   sb_tolerance->setRange(0.0, 1000.0);
   sb_tolerance->setSingleStep(0.01);
@@ -73,4 +73,9 @@ OptionsWindow::meanRange() const {
 double
 OptionsWindow::deviationRange() const {
   return sb_deviation->value();
+}
+
+double
+OptionsWindow::tolerance() const {
+  return sb_tolerance->value();
 }

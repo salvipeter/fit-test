@@ -78,7 +78,7 @@ MyWindow::updateRanges() {
 
 void
 MyWindow::fit() {
-  viewer->fit();
+  viewer->fit(options_window->tolerance());
 }
 
 void MyWindow::startComputation(QString message) {

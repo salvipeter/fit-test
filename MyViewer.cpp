@@ -83,8 +83,9 @@ MyViewer::setRanges(size_t resolution, double mean_range, double deviation_range
 }
 
 void
-MyViewer::fit() {
-  // TODO
+MyViewer::fit(double tolerance) {
+  fitted = std::make_unique<BSplineModel>();
+  // fitted->fit(*nominal, *points);
   update();
 }
 
