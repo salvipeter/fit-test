@@ -10,5 +10,6 @@
 moc_*
 qrc_*
 *.so*
+*.stash
 Makefile
 fit-test
